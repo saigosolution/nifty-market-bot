@@ -12,55 +12,57 @@ def get_nifty_data():
         url = "https://www.screener.in/company/NIFTY/"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
         }
         
-        response = requests.get(url, headers=headers)
+        session = requests.Session()
+        response = session.get(url, headers=headers)
         if response.status_code != 200:
             print(f"Error fetching Nifty data. Status code: {response.status_code}")
-            return None, None, None, None
+            print(f"Response content: {response.text[:500]}")  # Print first 500 chars of response
+            return None, None, None
             
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(response.text, 'lxml')
+        print("Successfully fetched page content")
         
         # Extract current price
         try:
-            current_price = float(soup.select_one('.current-price').text.replace('₹', '').replace(',', '').strip())
+            price_element = soup.select_one('div.company-ratios li.flex.flex-space-between:contains("Current Price")')
+            if price_element:
+                current_price = float(price_element.text.split('Current Price')[-1].replace('₹', '').replace(',', '').strip())
+            else:
+                current_price = None
             print(f"Current Price: {current_price}")
-        except:
+        except Exception as e:
+            print(f"Error extracting current price: {e}")
             current_price = None
-            print("Failed to extract current price")
         
         # Extract P/E
         try:
-            pe_ratio = float(soup.find('text', text='P/E').find_next('b').text.strip())
-            print(f"P/E Ratio: {pe_ratio}")
-        except:
-            try:
-                # Alternative way to find P/E
-                ratios = soup.find_all('li', class_='flex flex-space-between')
-                for ratio in ratios:
-                    if 'P/E' in ratio.text:
-                        pe_ratio = float(ratio.text.split('P/E')[-1].strip())
-                        break
-            except:
+            pe_element = soup.select_one('div.company-ratios li.flex.flex-space-between:contains("P/E")')
+            if pe_element:
+                pe_ratio = float(pe_element.text.split('P/E')[-1].replace(',', '').strip())
+            else:
                 pe_ratio = None
-            print("Failed to extract P/E ratio")
+            print(f"P/E Ratio: {pe_ratio}")
+        except Exception as e:
+            print(f"Error extracting P/E ratio: {e}")
+            pe_ratio = None
         
         # Extract Price to Book value
         try:
-            pb_ratio = float(soup.find('text', text='Price to Book value').find_next('b').text.strip())
-            print(f"P/B Ratio: {pb_ratio}")
-        except:
-            try:
-                # Alternative way to find P/B
-                ratios = soup.find_all('li', class_='flex flex-space-between')
-                for ratio in ratios:
-                    if 'Price to Book value' in ratio.text:
-                        pb_ratio = float(ratio.text.split('Price to Book value')[-1].strip())
-                        break
-            except:
+            pb_element = soup.select_one('div.company-ratios li.flex.flex-space-between:contains("Price to Book value")')
+            if pb_element:
+                pb_ratio = float(pb_element.text.split('Price to Book value')[-1].replace(',', '').strip())
+            else:
                 pb_ratio = None
-            print("Failed to extract P/B ratio")
+            print(f"P/B Ratio: {pb_ratio}")
+        except Exception as e:
+            print(f"Error extracting P/B ratio: {e}")
+            pb_ratio = None
         
         return current_price, pe_ratio, pb_ratio
     except Exception as e:
@@ -74,7 +76,10 @@ def get_mmi_data():
         url = "https://www.tickertape.in/market-mood-index"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
         }
         
         session = requests.Session()
@@ -83,7 +88,7 @@ def get_mmi_data():
             print(f"Error fetching MMI data. Status code: {response.status_code}")
             return "N/A"
             
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(response.text, 'lxml')
         mmi_value = soup.find('div', {'class': 'mmi-value'})
         if mmi_value:
             mmi_value = mmi_value.text.strip()
