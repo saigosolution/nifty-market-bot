@@ -19,18 +19,24 @@ jobs:
       with:
         python-version: '3.9'
         
+    - name: Clean Python environment
+      run: |
+        python -m pip uninstall -y pandas numpy yfinance
+        rm -rf ~/.cache/pip
+        
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        python -m pip install --no-cache-dir --upgrade pip
+        python -m pip install --no-cache-dir -r requirements.txt
         
     - name: Run market analysis script
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
-        # Print Python version
+        # Print Python version and installed packages
         python --version
+        pip list
         
         # Run script with detailed error output
         python -u market_analysis.py 2>&1
@@ -40,4 +46,4 @@ jobs:
       run: |
         echo "Checking environment variables (safely):"
         echo "TELEGRAM_BOT_TOKEN exists: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}"
-        echo "TELEGRAM_CHAT_ID exists: ${{ secrets.TELEGRAM_CHAT_ID != '' }}"
+        echo "TELEGRAM_CHAT_ID exists: ${{ secrets.TELEGRAM_CHAT_ID != '' }}" 
