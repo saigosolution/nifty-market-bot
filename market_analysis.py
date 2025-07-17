@@ -3,8 +3,7 @@ import sys
 import requests
 from bs4 import BeautifulSoup
 import yfinance as yf
-import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import traceback
 
@@ -21,38 +20,56 @@ def check_environment():
 def get_nifty_data():
     try:
         print("Fetching Nifty 50 data...")
-        # Get Nifty 50 data using yfinance
+        # Get Nifty 50 data using yfinance's history instead of info
         nifty = yf.Ticker("^NSEI")
-        current_price = nifty.info['regularMarketPrice']
+        # Get today's data
+        df = nifty.history(period="1d")
+        if not df.empty:
+            current_price = df['Close'].iloc[-1]
+        else:
+            print("No Nifty data available for today, trying to get last closing price...")
+            df = nifty.history(period="2d")
+            current_price = df['Close'].iloc[-1]
         print(f"Nifty 50 price: {current_price}")
         
-        # Get PE Ratio from NSE website
+        # Get PE Ratio from alternative source (MoneyControl)
         print("Fetching PE Ratio...")
-        nse_url = "https://www.nseindia.com/market-data/live-market-indices"
+        mc_url = "https://www.moneycontrol.com/indian-indices/nifty-50-9.html"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Cache-Control': 'max-age=0'
+            'Accept-Language': 'en-US,en;q=0.5'
         }
         
         session = requests.Session()
-        response = session.get(nse_url, headers=headers)
+        response = session.get(mc_url, headers=headers)
         if response.status_code != 200:
             print(f"Error fetching PE ratio. Status code: {response.status_code}")
             pe_ratio = "N/A"
         else:
             soup = BeautifulSoup(response.text, 'html.parser')
-            pe_ratio = soup.find('td', {'data-name': 'pe'})
-            pe_ratio = pe_ratio.text.strip() if pe_ratio else "N/A"
+            try:
+                # Look for PE ratio in the page
+                pe_div = soup.find('div', text=lambda t: t and 'P/E' in t)
+                if pe_div:
+                    pe_ratio = pe_div.find_next('div').text.strip()
+                else:
+                    pe_ratio = "N/A"
+            except Exception as e:
+                print(f"Error parsing PE ratio: {e}")
+                pe_ratio = "N/A"
         print(f"PE Ratio: {pe_ratio}")
         
-        # Get VIX data
+        # Get VIX data using history instead of info
         print("Fetching VIX data...")
         vix = yf.Ticker("^INDIAVIX")
-        vix_value = vix.info['regularMarketPrice']
+        vix_df = vix.history(period="1d")
+        if not vix_df.empty:
+            vix_value = vix_df['Close'].iloc[-1]
+        else:
+            print("No VIX data available for today, trying to get last closing price...")
+            vix_df = vix.history(period="2d")
+            vix_value = vix_df['Close'].iloc[-1]
         print(f"VIX value: {vix_value}")
         
         return current_price, pe_ratio, vix_value
@@ -104,7 +121,7 @@ def analyze_market(nifty_price, pe_ratio, vix_value, mmi_value):
     
     # PE Ratio Analysis
     try:
-        pe_float = float(pe_ratio)
+        pe_float = float(pe_ratio.replace(',', ''))
         if pe_float > 25:
             analysis.append("🔴 Market is expensive based on PE ratio.")
         elif pe_float < 15:
@@ -130,7 +147,7 @@ def analyze_market(nifty_price, pe_ratio, vix_value, mmi_value):
 
 def get_investment_advice(pe_ratio, vix_value, mmi_value):
     try:
-        pe_float = float(pe_ratio)
+        pe_float = float(pe_ratio.replace(',', ''))
         mmi_float = float(mmi_value)
         
         if pe_float > 25 and mmi_float > 70:
@@ -171,7 +188,8 @@ def send_telegram_message(message):
 def main():
     try:
         # Check environment variables
-        check_environment()
+        if not os.environ.get('TELEGRAM_BOT_TOKEN') or not os.environ.get('TELEGRAM_CHAT_ID'):
+            raise EnvironmentError("Missing required environment variables: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID")
         
         # Get current time in IST
         ist = pytz.timezone('Asia/Kolkata')
@@ -217,4 +235,4 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    main() 
