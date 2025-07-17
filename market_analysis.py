@@ -2,10 +2,10 @@ import os
 import sys
 import requests
 from bs4 import BeautifulSoup
-import yfinance as yf
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 import traceback
+import json
 
 def check_environment():
     """Check if required environment variables are set"""
@@ -20,25 +20,27 @@ def check_environment():
 def get_nifty_data():
     try:
         print("Fetching Nifty 50 data...")
-        # Get Nifty 50 data using yfinance's history instead of info
-        nifty = yf.Ticker("^NSEI")
-        # Get today's data
-        df = nifty.history(period="1d")
-        if not df.empty:
-            current_price = df['Close'].iloc[-1]
-        else:
-            print("No Nifty data available for today, trying to get last closing price...")
-            df = nifty.history(period="2d")
-            current_price = df['Close'].iloc[-1]
+        # Using Yahoo Finance API directly
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            print(f"Error fetching Nifty data. Status code: {response.status_code}")
+            return None, "N/A", None
+            
+        data = response.json()
+        current_price = data['chart']['result'][0]['meta']['regularMarketPrice']
         print(f"Nifty 50 price: {current_price}")
         
-        # Get PE Ratio from alternative source (MoneyControl)
+        # Get PE Ratio from MoneyControl
         print("Fetching PE Ratio...")
         mc_url = "https://www.moneycontrol.com/indian-indices/nifty-50-9.html"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
         }
         
         session = requests.Session()
@@ -49,7 +51,6 @@ def get_nifty_data():
         else:
             soup = BeautifulSoup(response.text, 'html.parser')
             try:
-                # Look for PE ratio in the page
                 pe_div = soup.find('div', text=lambda t: t and 'P/E' in t)
                 if pe_div:
                     pe_ratio = pe_div.find_next('div').text.strip()
@@ -60,16 +61,16 @@ def get_nifty_data():
                 pe_ratio = "N/A"
         print(f"PE Ratio: {pe_ratio}")
         
-        # Get VIX data using history instead of info
+        # Get VIX data
         print("Fetching VIX data...")
-        vix = yf.Ticker("^INDIAVIX")
-        vix_df = vix.history(period="1d")
-        if not vix_df.empty:
-            vix_value = vix_df['Close'].iloc[-1]
-        else:
-            print("No VIX data available for today, trying to get last closing price...")
-            vix_df = vix.history(period="2d")
-            vix_value = vix_df['Close'].iloc[-1]
+        vix_url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EINDIAVIX"
+        response = requests.get(vix_url, headers=headers)
+        if response.status_code != 200:
+            print(f"Error fetching VIX data. Status code: {response.status_code}")
+            return current_price, pe_ratio, None
+            
+        vix_data = response.json()
+        vix_value = vix_data['chart']['result'][0]['meta']['regularMarketPrice']
         print(f"VIX value: {vix_value}")
         
         return current_price, pe_ratio, vix_value
@@ -84,8 +85,7 @@ def get_mmi_data():
         url = "https://www.tickertape.in/market-mood-index"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5'
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
         }
         
         session = requests.Session()
@@ -164,6 +164,9 @@ def send_telegram_message(message):
         print("Sending Telegram message...")
         bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
         chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+        
+        if not bot_token or not chat_id:
+            raise ValueError("Telegram bot token or chat ID not found in environment variables")
         
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
         data = {
