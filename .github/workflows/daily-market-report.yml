@@ -1,0 +1,32 @@
+name: Daily Market Report
+
+on:
+  schedule:
+    # Run at 9:30 AM IST (4:00 AM UTC) every day
+    - cron: '0 4 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  send-market-report:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run market scraper
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        python src/market_scraper.py
