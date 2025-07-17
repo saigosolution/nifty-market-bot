@@ -1,15 +1,13 @@
-name: NIFTY Market Bot
+name: Daily Market Report
 
 on:
   schedule:
-    # Runs at 9:30 AM IST (4:00 AM UTC) every day
+    # Run at 9:30 AM IST (4:00 AM UTC) every day
     - cron: '0 4 * * *'
-  
-  # Allow manual triggering
-  workflow_dispatch:
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
-  run-market-bot:
+  send-market-report:
     runs-on: ubuntu-latest
     
     steps:
@@ -26,8 +24,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     
-    - name: Run market bot
+    - name: Run market scraper
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: python market_bot.py
+      run: |
+        python src/market_scraper.py
