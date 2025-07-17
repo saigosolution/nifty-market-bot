@@ -1,7 +1,5 @@
 requests==2.31.0
 beautifulsoup4==4.12.2
-pandas==1.5.3
-numpy==1.23.5
 python-telegram-bot==20.6
 yfinance==0.2.31
 lxml==4.9.3
