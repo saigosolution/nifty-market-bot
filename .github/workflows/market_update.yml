@@ -28,4 +28,16 @@ jobs:
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: python market_analysis.py 
+      run: |
+        # Print Python version
+        python --version
+        
+        # Run script with detailed error output
+        python -u market_analysis.py 2>&1
+        
+    - name: Debug on failure
+      if: failure()
+      run: |
+        echo "Checking environment variables (safely):"
+        echo "TELEGRAM_BOT_TOKEN exists: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}"
+        echo "TELEGRAM_CHAT_ID exists: ${{ secrets.TELEGRAM_CHAT_ID != '' }}"
