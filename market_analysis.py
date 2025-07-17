@@ -5,79 +5,68 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import pytz
 import traceback
-import json
-
-def check_environment():
-    """Check if required environment variables are set"""
-    missing_vars = []
-    for var in ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']:
-        if not os.environ.get(var):
-            missing_vars.append(var)
-    
-    if missing_vars:
-        raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
 def get_nifty_data():
     try:
-        print("Fetching Nifty 50 data...")
-        # Using Yahoo Finance API directly
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        
-        response = requests.get(url, headers=headers)
-        if response.status_code != 200:
-            print(f"Error fetching Nifty data. Status code: {response.status_code}")
-            return None, "N/A", None
-            
-        data = response.json()
-        current_price = data['chart']['result'][0]['meta']['regularMarketPrice']
-        print(f"Nifty 50 price: {current_price}")
-        
-        # Get PE Ratio from MoneyControl
-        print("Fetching PE Ratio...")
-        mc_url = "https://www.moneycontrol.com/indian-indices/nifty-50-9.html"
+        print("Fetching Nifty data from screener.in...")
+        url = "https://www.screener.in/company/NIFTY/"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
         }
         
-        session = requests.Session()
-        response = session.get(mc_url, headers=headers)
+        response = requests.get(url, headers=headers)
         if response.status_code != 200:
-            print(f"Error fetching PE ratio. Status code: {response.status_code}")
-            pe_ratio = "N/A"
-        else:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            try:
-                pe_div = soup.find('div', text=lambda t: t and 'P/E' in t)
-                if pe_div:
-                    pe_ratio = pe_div.find_next('div').text.strip()
-                else:
-                    pe_ratio = "N/A"
-            except Exception as e:
-                print(f"Error parsing PE ratio: {e}")
-                pe_ratio = "N/A"
-        print(f"PE Ratio: {pe_ratio}")
-        
-        # Get VIX data
-        print("Fetching VIX data...")
-        vix_url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EINDIAVIX"
-        response = requests.get(vix_url, headers=headers)
-        if response.status_code != 200:
-            print(f"Error fetching VIX data. Status code: {response.status_code}")
-            return current_price, pe_ratio, None
+            print(f"Error fetching Nifty data. Status code: {response.status_code}")
+            return None, None, None, None
             
-        vix_data = response.json()
-        vix_value = vix_data['chart']['result'][0]['meta']['regularMarketPrice']
-        print(f"VIX value: {vix_value}")
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        return current_price, pe_ratio, vix_value
+        # Extract current price
+        try:
+            current_price = float(soup.select_one('.current-price').text.replace('₹', '').replace(',', '').strip())
+            print(f"Current Price: {current_price}")
+        except:
+            current_price = None
+            print("Failed to extract current price")
+        
+        # Extract P/E
+        try:
+            pe_ratio = float(soup.find('text', text='P/E').find_next('b').text.strip())
+            print(f"P/E Ratio: {pe_ratio}")
+        except:
+            try:
+                # Alternative way to find P/E
+                ratios = soup.find_all('li', class_='flex flex-space-between')
+                for ratio in ratios:
+                    if 'P/E' in ratio.text:
+                        pe_ratio = float(ratio.text.split('P/E')[-1].strip())
+                        break
+            except:
+                pe_ratio = None
+            print("Failed to extract P/E ratio")
+        
+        # Extract Price to Book value
+        try:
+            pb_ratio = float(soup.find('text', text='Price to Book value').find_next('b').text.strip())
+            print(f"P/B Ratio: {pb_ratio}")
+        except:
+            try:
+                # Alternative way to find P/B
+                ratios = soup.find_all('li', class_='flex flex-space-between')
+                for ratio in ratios:
+                    if 'Price to Book value' in ratio.text:
+                        pb_ratio = float(ratio.text.split('Price to Book value')[-1].strip())
+                        break
+            except:
+                pb_ratio = None
+            print("Failed to extract P/B ratio")
+        
+        return current_price, pe_ratio, pb_ratio
     except Exception as e:
         print(f"Error in get_nifty_data: {str(e)}")
         print(traceback.format_exc())
-        return None, "N/A", None
+        return None, None, None
 
 def get_mmi_data():
     try:
@@ -108,54 +97,89 @@ def get_mmi_data():
         print(traceback.format_exc())
         return "N/A"
 
-def analyze_market(nifty_price, pe_ratio, vix_value, mmi_value):
+def analyze_market(current_price, pe_ratio, pb_ratio, mmi_value):
     analysis = []
     
-    # VIX Analysis
-    if vix_value and isinstance(vix_value, (int, float)) and vix_value > 20:
-        analysis.append("🔴 High market volatility (VIX > 20). Exercise caution.")
-    elif vix_value and isinstance(vix_value, (int, float)):
-        analysis.append("🟢 Market volatility is normal.")
-    else:
-        analysis.append("⚪ VIX data unavailable.")
-    
-    # PE Ratio Analysis
-    try:
-        pe_float = float(pe_ratio.replace(',', ''))
-        if pe_float > 25:
-            analysis.append("🔴 Market is expensive based on PE ratio.")
-        elif pe_float < 15:
-            analysis.append("🟢 Market is relatively cheap based on PE ratio.")
+    # P/E Analysis
+    if pe_ratio:
+        if pe_ratio > 25:
+            analysis.append("🔴 Market is expensive based on P/E ratio (>25)")
+        elif pe_ratio < 15:
+            analysis.append("🟢 Market is relatively cheap based on P/E ratio (<15)")
         else:
-            analysis.append("🟡 Market valuation is neutral based on PE ratio.")
-    except:
-        analysis.append("⚪ PE ratio data unavailable.")
+            analysis.append("🟡 Market valuation is neutral based on P/E ratio (15-25)")
+    else:
+        analysis.append("⚪ P/E ratio data unavailable")
+    
+    # P/B Analysis
+    if pb_ratio:
+        if pb_ratio > 4:
+            analysis.append("🔴 High Price to Book ratio (>4) indicates expensive valuations")
+        elif pb_ratio < 2:
+            analysis.append("🟢 Low Price to Book ratio (<2) indicates potential value")
+        else:
+            analysis.append("🟡 Price to Book ratio is in moderate range (2-4)")
+    else:
+        analysis.append("⚪ Price to Book ratio data unavailable")
     
     # MMI Analysis
     try:
         mmi_float = float(mmi_value)
         if mmi_float > 70:
-            analysis.append("🔴 Market is in Extreme Greed zone (MMI).")
+            analysis.append("🔴 Market is in Extreme Greed zone (MMI > 70)")
         elif mmi_float < 30:
-            analysis.append("🟢 Market is in Extreme Fear zone (MMI).")
+            analysis.append("🟢 Market is in Extreme Fear zone (MMI < 30)")
         else:
-            analysis.append("🟡 Market sentiment is neutral (MMI).")
+            analysis.append("🟡 Market sentiment is neutral (MMI between 30-70)")
     except:
-        analysis.append("⚪ MMI data unavailable.")
+        analysis.append("⚪ MMI data unavailable")
     
     return "\n".join(analysis)
 
-def get_investment_advice(pe_ratio, vix_value, mmi_value):
+def get_investment_advice(pe_ratio, pb_ratio, mmi_value):
     try:
-        pe_float = float(pe_ratio.replace(',', ''))
-        mmi_float = float(mmi_value)
+        advice = []
+        risk_score = 0  # 0 = neutral, positive = risky, negative = conservative
         
-        if pe_float > 25 and mmi_float > 70:
-            return "📊 Recommendation: Consider increasing allocation to debt/fixed income. Market showing signs of overvaluation."
-        elif pe_float < 15 and mmi_float < 30:
-            return "📊 Recommendation: Consider increasing equity allocation. Market showing signs of undervaluation."
+        # P/E based analysis
+        if pe_ratio:
+            if pe_ratio > 25:
+                risk_score += 2
+                advice.append("• High P/E ratio suggests market is expensive")
+            elif pe_ratio < 15:
+                risk_score -= 2
+                advice.append("• Low P/E ratio indicates potential value opportunities")
+        
+        # P/B based analysis
+        if pb_ratio:
+            if pb_ratio > 4:
+                risk_score += 1
+                advice.append("• High P/B ratio indicates rich valuations")
+            elif pb_ratio < 2:
+                risk_score -= 1
+                advice.append("• Low P/B ratio suggests possible undervaluation")
+        
+        # MMI based analysis
+        try:
+            mmi_float = float(mmi_value)
+            if mmi_float > 70:
+                risk_score += 2
+                advice.append("• High market sentiment (greed) suggests caution")
+            elif mmi_float < 30:
+                risk_score -= 2
+                advice.append("• Low market sentiment (fear) might present opportunities")
+        except:
+            pass
+        
+        # Final recommendation based on risk score
+        if risk_score >= 2:
+            advice.append("\n📊 Recommendation: Consider reducing equity exposure and increasing allocation to debt/fixed income.")
+        elif risk_score <= -2:
+            advice.append("\n📊 Recommendation: Consider increasing equity exposure as market valuations appear favorable.")
         else:
-            return "📊 Recommendation: Maintain balanced allocation between equity and debt as per your financial goals."
+            advice.append("\n📊 Recommendation: Maintain balanced allocation between equity and debt as per your financial goals.")
+        
+        return "\n".join(advice)
     except:
         return "📊 Recommendation: Insufficient data for investment advice. Stick to your asset allocation strategy."
 
@@ -190,38 +214,35 @@ def send_telegram_message(message):
 
 def main():
     try:
-        # Check environment variables
-        if not os.environ.get('TELEGRAM_BOT_TOKEN') or not os.environ.get('TELEGRAM_CHAT_ID'):
-            raise EnvironmentError("Missing required environment variables: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID")
-        
         # Get current time in IST
         ist = pytz.timezone('Asia/Kolkata')
         current_time = datetime.now(ist).strftime('%Y-%m-%d %H:%M:%S %Z')
         print(f"Current time: {current_time}")
         
         # Get market data
-        nifty_price, pe_ratio, vix_value = get_nifty_data()
-        if nifty_price is None:
+        current_price, pe_ratio, pb_ratio = get_nifty_data()
+        if current_price is None:
             raise Exception("Failed to fetch Nifty data")
             
         mmi_value = get_mmi_data()
         
         # Analyze market conditions
-        market_analysis = analyze_market(nifty_price, pe_ratio, vix_value, mmi_value)
-        investment_advice = get_investment_advice(pe_ratio, vix_value, mmi_value)
+        market_analysis = analyze_market(current_price, pe_ratio, pb_ratio, mmi_value)
+        investment_advice = get_investment_advice(pe_ratio, pb_ratio, mmi_value)
         
         # Format message
         message = f"""🔔 <b>Daily Market Update</b> ({current_time})
 
 📈 <b>Market Indicators:</b>
-• Nifty 50: ₹{nifty_price:,.2f}
-• PE Ratio: {pe_ratio}
-• VIX: {vix_value:.2f if isinstance(vix_value, (int, float)) else 'N/A'}
+• Nifty 50: ₹{current_price:,.2f if current_price else 'N/A'}
+• P/E Ratio: {pe_ratio:.2f if pe_ratio else 'N/A'}
+• Price to Book: {pb_ratio:.2f if pb_ratio else 'N/A'}
 • Market Mood Index: {mmi_value}
 
 📊 <b>Market Analysis:</b>
 {market_analysis}
 
+📈 <b>Investment Insights:</b>
 {investment_advice}
 
 🔍 <i>Note: This is automated analysis. Please consult financial advisor for personalized advice.</i>"""
