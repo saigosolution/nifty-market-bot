@@ -19,31 +19,67 @@ def scrape_nifty_data():
         
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Extract current price
-        price_element = soup.find('span', class_='number')
-        current_price = price_element.text.strip() if price_element else "N/A"
+        # Extract current price (look for the price in the main content)
+        current_price = "N/A"
+        # Try multiple methods to find the price
+        price_patterns = [
+            r'₹\s*([\d,]+)',
+            r'Current Price\s*₹\s*([\d,]+)',
+            r'CMP\s*₹\s*([\d,]+)'
+        ]
+        
+        for pattern in price_patterns:
+            price_match = re.search(pattern, response.text)
+            if price_match:
+                current_price = f"₹{price_match.group(1)}"
+                break
         
         # Extract PE ratio
         pe_ratio = "N/A"
-        ratios_section = soup.find('div', id='ratios')
-        if ratios_section:
-            pe_element = ratios_section.find('span', string=re.compile(r'PE'))
-            if pe_element:
-                pe_value = pe_element.find_next('span', class_='number')
-                if pe_value:
-                    pe_ratio = pe_value.text.strip()
+        pe_patterns = [
+            r'P/E\s*([\d.]+)',
+            r'PE\s*([\d.]+)',
+            r'Price to Earning\s*([\d.]+)'
+        ]
+        
+        for pattern in pe_patterns:
+            pe_match = re.search(pattern, response.text)
+            if pe_match:
+                pe_ratio = pe_match.group(1)
+                break
         
         # Extract change percentage
-        change_element = soup.find('span', class_='percentage')
-        change_percent = change_element.text.strip() if change_element else "N/A"
+        change_percent = "N/A"
+        change_patterns = [
+            r'([\d.]+%)',
+            r'([+-]?[\d.]+%)'
+        ]
+        
+        for pattern in change_patterns:
+            change_match = re.search(pattern, response.text)
+            if change_match:
+                change_percent = change_match.group(1)
+                break
         
         # Extract market cap
         market_cap = "N/A"
-        market_cap_element = soup.find('span', string=re.compile(r'Market Cap'))
-        if market_cap_element:
-            market_cap_value = market_cap_element.find_next('span', class_='number')
-            if market_cap_value:
-                market_cap = market_cap_value.text.strip()
+        market_cap_patterns = [
+            r'Market Cap\s*₹\s*([\d,]+\s*Cr)',
+            r'Market Cap\s*₹\s*([\d,]+)',
+            r'Mkt Cap:\s*₹\s*([\d,]+\s*Cr)'
+        ]
+        
+        for pattern in market_cap_patterns:
+            market_cap_match = re.search(pattern, response.text)
+            if market_cap_match:
+                market_cap = f"₹{market_cap_match.group(1)}"
+                break
+        
+        # Debug: Print what we found
+        print(f"Debug - Current Price: {current_price}")
+        print(f"Debug - PE Ratio: {pe_ratio}")
+        print(f"Debug - Change: {change_percent}")
+        print(f"Debug - Market Cap: {market_cap}")
         
         return {
             'current_price': current_price,
@@ -70,19 +106,57 @@ def scrape_mmi_data():
         
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Extract MMI value
+        # Extract MMI value using multiple methods
         mmi_value = "N/A"
         mmi_status = "N/A"
         
-        # Look for MMI value
-        mmi_element = soup.find('div', class_='mmi-value') or soup.find('span', class_='mmi-number')
-        if mmi_element:
-            mmi_value = mmi_element.text.strip()
+        # Try different patterns to find MMI value
+        mmi_patterns = [
+            r'MMI[:\s]*(\d+)',
+            r'Market Mood Index[:\s]*(\d+)',
+            r'mood.*?(\d+)',
+            r'index.*?(\d+)'
+        ]
         
-        # Look for MMI status
-        status_element = soup.find('div', class_='mmi-status') or soup.find('span', class_='mmi-status')
-        if status_element:
-            mmi_status = status_element.text.strip()
+        for pattern in mmi_patterns:
+            mmi_match = re.search(pattern, response.text, re.IGNORECASE)
+            if mmi_match:
+                mmi_value = mmi_match.group(1)
+                break
+        
+        # Determine status based on MMI value
+        if mmi_value != "N/A":
+            try:
+                mmi_int = int(mmi_value)
+                if mmi_int >= 71:
+                    mmi_status = "Extreme Greed"
+                elif mmi_int >= 51:
+                    mmi_status = "Greed"
+                elif mmi_int >= 31:
+                    mmi_status = "Neutral"
+                elif mmi_int >= 11:
+                    mmi_status = "Fear"
+                else:
+                    mmi_status = "Extreme Fear"
+            except:
+                pass
+        
+        # Try to find status directly from page
+        status_patterns = [
+            r'(Extreme Greed|Greed|Neutral|Fear|Extreme Fear)',
+            r'status[:\s]*(Extreme Greed|Greed|Neutral|Fear|Extreme Fear)',
+            r'mood[:\s]*(Extreme Greed|Greed|Neutral|Fear|Extreme Fear)'
+        ]
+        
+        for pattern in status_patterns:
+            status_match = re.search(pattern, response.text, re.IGNORECASE)
+            if status_match:
+                mmi_status = status_match.group(1)
+                break
+        
+        # Debug: Print what we found
+        print(f"Debug - MMI Value: {mmi_value}")
+        print(f"Debug - MMI Status: {mmi_status}")
         
         return {
             'mmi_value': mmi_value,
@@ -163,34 +237,69 @@ def format_message(nifty_data, mmi_data, insights):
     
     current_time = datetime.now().strftime('%d %B %Y, %I:%M %p')
     
+    # Create status emoji based on change
+    price_emoji = "📈" if nifty_data and "+" in str(nifty_data.get('change_percent', '')) else "📉"
+    
+    # Get market condition emoji
+    condition_emoji = {
+        'Bullish': '🟢',
+        'Bearish': '🔴',
+        'Neutral': '🟡'
+    }.get(insights['market_condition'], '🟡')
+    
+    # Get recommendation emoji
+    rec_emoji = {
+        'Buy': '✅',
+        'Sell/Reduce': '❌',
+        'Hold': '⏸️',
+        'Cautious Buy': '⚠️✅'
+    }.get(insights['recommendation'], '⏸️')
+    
     message = f"""🚀 **NIFTY Market Update**
 📅 {current_time}
 
-📊 **NIFTY 50 Data:**
-💰 Current Price: {nifty_data['current_price'] if nifty_data else 'N/A'}
-📈 Change: {nifty_data['change_percent'] if nifty_data else 'N/A'}
-🏢 PE Ratio: {nifty_data['pe_ratio'] if nifty_data else 'N/A'}
-💎 Market Cap: {nifty_data['market_cap'] if nifty_data else 'N/A'}
+{price_emoji} **NIFTY 50 Data:**
+💰 Current Price: **{nifty_data['current_price'] if nifty_data else 'N/A'}**
+📊 Change: **{nifty_data['change_percent'] if nifty_data else 'N/A'}**
+🏢 PE Ratio: **{nifty_data['pe_ratio'] if nifty_data else 'N/A'}**
+💎 Market Cap: **{nifty_data['market_cap'] if nifty_data else 'N/A'}**
 
-🌡️ **Market Mood Index:**
-🎯 MMI Value: {mmi_data['mmi_value'] if mmi_data else 'N/A'}
-😊 Status: {mmi_data['mmi_status'] if mmi_data else 'N/A'}
+🌡️ **Market Mood Index (MMI):**
+🎯 MMI Value: **{mmi_data['mmi_value'] if mmi_data else 'N/A'}**
+😊 Status: **{mmi_data['mmi_status'] if mmi_data else 'N/A'}**
 
-🔍 **Market Analysis:**
-📊 Condition: {insights['market_condition']}
-💡 Recommendation: {insights['recommendation']}
-⚖️ Asset Allocation: {insights['asset_allocation']}
+{condition_emoji} **Market Analysis:**
+📊 Condition: **{insights['market_condition']}**
+{rec_emoji} Recommendation: **{insights['recommendation']}**
+⚖️ Asset Allocation: **{insights['asset_allocation']}**
 
-💭 **Key Insights:**"""
+💡 **Key Insights:**"""
 
     for reason in insights['reasoning']:
         message += f"\n• {reason}"
+    
+    # Add investment tips based on market condition
+    if insights['market_condition'] == 'Bullish':
+        message += f"\n\n🎯 **Investment Tips:**"
+        message += f"\n• Consider SIP in equity mutual funds"
+        message += f"\n• Look for quality stocks on dips"
+        message += f"\n• Avoid FOMO - invest systematically"
+    elif insights['market_condition'] == 'Bearish':
+        message += f"\n\n🛡️ **Protection Tips:**"
+        message += f"\n• Increase debt allocation"
+        message += f"\n• Avoid fresh equity positions"
+        message += f"\n• Consider defensive sectors"
+    else:
+        message += f"\n\n⚖️ **Balanced Approach:**"
+        message += f"\n• Continue regular SIPs"
+        message += f"\n• Maintain balanced portfolio"
+        message += f"\n• Wait for clear trend signals"
     
     message += f"""
 
 ⚠️ **Disclaimer:** This is automated analysis for educational purposes only. Please consult a financial advisor for investment decisions.
 
-#NIFTY #MarketUpdate #StockMarket"""
+#NIFTY #MarketUpdate #StockMarket #MMI"""
     
     return message
 
